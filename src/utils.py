@@ -1,10 +1,19 @@
 """
 Utility functions for the Fake News Detection project
 """
+from __future__ import annotations
 
 import random
 import numpy as np
-import torch
+
+# torch is only needed for transformer training / checkpoints. Import it
+# lazily so the sklearn baseline pipeline runs without the heavy dependency.
+try:
+    import torch
+    _TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    _TORCH_AVAILABLE = False
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
@@ -28,11 +37,12 @@ def set_seed(seed: int = 42):
     """
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    if _TORCH_AVAILABLE:
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
     console.print(f"[green]✓[/green] Random seed set to {seed}")
 
 def setup_logging(name: str = "fake_news", level: str = "INFO") -> logging.Logger:

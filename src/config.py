@@ -5,7 +5,16 @@ Contains all project-wide constants, paths, and hyperparameters
 
 from pathlib import Path
 from typing import Dict, Any
-import torch
+
+# torch is only needed for the transformer model. Import it lazily so the
+# sklearn baseline pipeline (download, split, preprocess, train, evaluate)
+# runs without the heavy deep-learning dependency.
+try:
+    import torch
+    _TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    _TORCH_AVAILABLE = False
 
 # Project root directory
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -38,7 +47,7 @@ VAL_RATIO = 0.1
 TEST_RATIO = 0.1
 
 # Device configuration
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu") if _TORCH_AVAILABLE else "cpu"
 
 # Baseline model configurations
 BASELINE_CONFIG = {
