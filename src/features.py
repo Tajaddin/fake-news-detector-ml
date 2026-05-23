@@ -3,6 +3,8 @@ Feature extraction module for Fake News Detection
 Implements TF-IDF, n-grams, and metadata features
 """
 
+import hashlib
+import logging
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Union
@@ -12,6 +14,18 @@ from scipy.sparse import hstack, csr_matrix
 import pickle
 from pathlib import Path
 from rich.console import Console
+
+logger = logging.getLogger(__name__)
+
+# SHA256 hashes of FeatureExtractor pickles that the project has vetted.
+# Populate when you commit or pin a downloadable artifact, e.g.:
+#   MODEL_HASHES = {"feature_extractor.pkl": "abc123..."}
+#
+# The .load() classmethod refuses to unpickle a file whose hash does not
+# match a registered value, since pickle deserialization runs arbitrary
+# code. Files not listed here (BYOM: train-and-save locally) are loaded
+# but a security warning is logged so the risk is visible.
+MODEL_HASHES: dict[str, str] = {}
 
 from config import MODELS_DIR, BASELINE_CONFIG
 from utils import console
@@ -333,9 +347,30 @@ class FeatureExtractor:
     def load(cls, path: Path):
         """
         Reconstruct FeatureExtractor from saved state.
+
+        Verifies the file's SHA256 against MODEL_HASHES before unpickling
+        (raises ValueError on mismatch). If the file is not registered in
+        MODEL_HASHES, the load proceeds but logs a security warning since
+        pickle deserialization executes arbitrary code.
         """
-        with open(path, "rb") as f:
-            state = pickle.load(f)
+        raw = Path(path).read_bytes()
+        expected = MODEL_HASHES.get(Path(path).name)
+        if expected is not None:
+            actual = hashlib.sha256(raw).hexdigest()
+            if actual != expected:
+                raise ValueError(
+                    f"Refusing to unpickle {path}: SHA256 {actual} does not "
+                    f"match the registered value {expected} in MODEL_HASHES. "
+                    f"The file may have been tampered with."
+                )
+        else:
+            logger.warning(
+                "Loading %s without SHA256 verification (no entry in "
+                "MODEL_HASHES). Pickle deserialization runs arbitrary code; "
+                "only load files you trained or vetted yourself.",
+                path,
+            )
+        state = pickle.loads(raw)
 
         obj = cls(
             use_tfidf=state["use_tfidf"],
