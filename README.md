@@ -34,7 +34,18 @@ The classification numbers in this repo are not generalizable claims about real-
 
 Python, scikit-learn, XGBoost, HuggingFace Transformers, PyTorch, SHAP, LIME, MLflow, Streamlit, pandas, numpy.
 
-## Run
+## How to run
+
+Prerequisites: Python 3.11+ (CPU is enough for the baseline; transformer phase wants CUDA).
+
+```bash
+# baseline LR pipeline (sklearn stack only — no torch needed)
+pip install pandas numpy scikit-learn scipy requests rich nltk joblib pytest
+python download_data.py --dataset liar
+python src/data_io.py --dataset liar --format csv
+python src/eval_holdout.py        # reproduces the 62.1% acc / 0.676 AUC hero on the LIAR held-out test
+pytest test_features.py -q
+```
 
 Two-phase scripts ship with the repo:
 
