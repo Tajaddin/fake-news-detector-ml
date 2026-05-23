@@ -287,7 +287,7 @@ class BaselineModel:
         if y_proba is not None and len(np.unique(y_true)) == 2:
             try:
                 metrics['auc'] = roc_auc_score(y_true, y_proba[:, 1])
-            except:
+            except Exception:
                 metrics['auc'] = 0.0
         
         if return_predictions:

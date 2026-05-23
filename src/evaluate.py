@@ -70,7 +70,7 @@ class ModelEvaluator:
             try:
                 self.model = BaselineModel.load(path)
                 self.console.print(f"[green]✓ Loaded model from {path}[/green]")
-            except:
+            except Exception:
                 # Try loading as joblib object
                 self.model = joblib.load(path)
                 self.console.print(f"[green]✓ Loaded model from {path}[/green]")
@@ -107,7 +107,7 @@ class ModelEvaluator:
         try:
             y_proba = self.model.predict_proba(X)
             has_proba = True
-        except:
+        except Exception:
             y_proba = None
             has_proba = False
         

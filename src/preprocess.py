@@ -226,7 +226,7 @@ class TextPreprocessor:
                     tokens = [self.stemmer.stem(t) for t in tokens]
                 
                 text = ' '.join(tokens)
-            except:
+            except Exception:
                 # If tokenization fails, continue with original text
                 pass
         elif self.remove_punctuation:

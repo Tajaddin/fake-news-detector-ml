@@ -97,7 +97,7 @@ class ModelTrainer:
                         test_df = pd.read_csv(f"data/processed/test_processed{suffix}.csv")
                         self.console.print(f"  Loaded preprocessed data: {suffix}")
                         break
-                except:
+                except Exception:
                     pass
         
         self.console.print(f"  Train: {len(train_df):,} samples")
