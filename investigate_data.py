@@ -2,6 +2,7 @@
 Investigate the fake news dataset for potential issues
 """
 
+import sys
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -172,4 +173,7 @@ def investigate_data():
     print("="*60)
 
 if __name__ == "__main__":
+    # Windows consoles default to a legacy code page; the output uses symbols like ✓.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     investigate_data()

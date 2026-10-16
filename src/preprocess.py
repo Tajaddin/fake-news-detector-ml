@@ -3,6 +3,7 @@ Text preprocessing module for Fake News Detection
 Handles text cleaning, normalization, and augmentation
 """
 
+import sys
 import re
 import string
 import pandas as pd
@@ -520,4 +521,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # Windows consoles default to a legacy code page; the output uses symbols like ✓.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     main()

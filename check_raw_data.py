@@ -2,6 +2,7 @@
 Check raw data and preprocessing pipeline
 """
 
+import sys
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -152,5 +153,8 @@ def check_config():
     print("="*60)
 
 if __name__ == "__main__":
+    # Windows consoles default to a legacy code page; the output uses symbols like ✓.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     check_raw_data()
     check_config()

@@ -155,4 +155,7 @@ def main():
     console.print("3. Explore data: jupyter notebook notebooks/01_eda.ipynb")
 
 if __name__ == "__main__":
+    # Windows consoles default to a legacy code page; the output uses symbols like ✓.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     main()

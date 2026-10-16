@@ -3,6 +3,7 @@ Feature extraction module for Fake News Detection
 Implements TF-IDF, n-grams, and metadata features
 """
 
+import sys
 import hashlib
 import logging
 import numpy as np
@@ -519,5 +520,8 @@ def main():
 
 
 if __name__ == "__main__":
+    # Windows consoles default to a legacy code page; the output uses symbols like ✓.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     main()
 

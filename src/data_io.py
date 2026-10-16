@@ -3,6 +3,7 @@ Data I/O module for Fake News Detection
 Handles data loading, splitting, and saving
 """
 
+import sys
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -477,4 +478,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # Windows consoles default to a legacy code page; the output uses symbols like ✓.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     main()

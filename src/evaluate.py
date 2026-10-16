@@ -3,6 +3,7 @@ FIXED Evaluation module for Fake News Detection models
 Properly loads saved feature extractors without data leakage
 """
 
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -483,4 +484,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # Windows consoles default to a legacy code page; the output uses symbols like ✓.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     main()

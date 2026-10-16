@@ -3,6 +3,7 @@ Baseline models for Fake News Detection
 Implements Logistic Regression, SVM, and Naive Bayes classifiers
 """
 
+import sys
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional, Tuple, List
@@ -591,4 +592,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # Windows consoles default to a legacy code page; the output uses symbols like ✓.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     main()

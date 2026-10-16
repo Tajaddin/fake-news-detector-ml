@@ -3,6 +3,7 @@ Unified training script for Fake News Detection models
 Handles both baseline and transformer models
 """
 
+import sys
 import argparse
 import json
 import time
@@ -351,4 +352,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # Windows consoles default to a legacy code page; the output uses symbols like ✓.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     main()
