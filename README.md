@@ -44,7 +44,7 @@ pip install pandas numpy scikit-learn scipy requests rich nltk joblib pytest
 python download_data.py --dataset liar
 python src/data_io.py --dataset liar --format csv
 python src/eval_holdout.py        # reproduces the 62.1% acc / 0.676 AUC hero on the LIAR held-out test
-pytest test_features.py -q
+pytest -q                         # 25 tests: preprocessing, feature extraction, splits, and the held-out metric
 ```
 
 Two-phase scripts ship with the repo:
@@ -92,7 +92,8 @@ fake-news-detector-ml/
   diagnose_perfect_accuracy.py   Six-step data audit
   check_raw_data.py              Raw corpus integrity check
   investigate_data.py            Bias and overlap probes
-  test_features.py               Feature pipeline tests
+  tests/                         pytest suite (preprocess, features, data_io, eval_holdout)
+  test_features.py               Manual inspection script for a trained model (not a pytest test)
   notebooks/01_eda.ipynb         EDA notebook plus .py mirror
   reports/figs/                  Confusion matrix, ROC, PR, threshold, calibration plots
   run_phase1.sh, run_phase2.sh   Two-phase runners

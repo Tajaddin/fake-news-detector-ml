@@ -19,11 +19,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pandas numpy scikit-learn scipy requests rich nltk joblib pytest
-      - name: Unit tests
-        run: pytest test_features.py -q
       - name: Download + split LIAR
         run: |
           python download_data.py --dataset liar
           python src/data_io.py --dataset liar --format csv
+      - name: Tests (unit tests plus the held-out metric regression check)
+        run: pytest -q
       - name: Held-out evaluation (reproduces the reported metric)
         run: python src/eval_holdout.py

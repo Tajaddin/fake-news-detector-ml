@@ -28,6 +28,16 @@ logger = logging.getLogger(__name__)
 # but a security warning is logged so the risk is visible.
 MODEL_HASHES: dict[str, str] = {}
 
+# Metadata columns FeatureExtractor can stack next to the text features, in the
+# order they appear in the matrix. Only the columns present in the frame are used.
+METADATA_COLUMNS = [
+    'text_length', 'word_count', 'sentence_count',
+    'punctuation_density', 'capital_ratio',
+    'exclamation_count', 'question_count',
+    'url_count', 'mention_count', 'hashtag_count',
+    'avg_word_length',
+]
+
 from config import MODELS_DIR, BASELINE_CONFIG
 from utils import console
 
@@ -121,63 +131,29 @@ class FeatureExtractor:
         # Feature names tracking
         self.feature_names_ = None
         self.n_features_ = None
+        self.metadata_columns_: List[str] = []
         
         self.console = Console()
     
-    def extract_metadata_features(self, df: pd.DataFrame) -> np.ndarray:
+    def extract_metadata_features(self, df: pd.DataFrame, columns: Optional[List[str]] = None) -> np.ndarray:
         """
         Extract metadata/linguistic features from DataFrame
-        
+
         Args:
             df: DataFrame with text and computed features
-        
+            columns: which metadata columns to use, in order. Defaults to every
+                column of METADATA_COLUMNS present in df. After fit, transform
+                passes the fitted list so the matrix width never changes.
+
         Returns:
             Metadata feature matrix
         """
-        metadata_features = []
-        
-        # Text statistics
-        if 'text_length' in df.columns:
-            metadata_features.append(df['text_length'].values.reshape(-1, 1))
-        
-        if 'word_count' in df.columns:
-            metadata_features.append(df['word_count'].values.reshape(-1, 1))
-        
-        if 'sentence_count' in df.columns:
-            metadata_features.append(df['sentence_count'].values.reshape(-1, 1))
-        
-        # Linguistic features
-        if 'punctuation_density' in df.columns:
-            metadata_features.append(df['punctuation_density'].values.reshape(-1, 1))
-        
-        if 'capital_ratio' in df.columns:
-            metadata_features.append(df['capital_ratio'].values.reshape(-1, 1))
-        
-        if 'exclamation_count' in df.columns:
-            metadata_features.append(df['exclamation_count'].values.reshape(-1, 1))
-        
-        if 'question_count' in df.columns:
-            metadata_features.append(df['question_count'].values.reshape(-1, 1))
-        
-        # Social media features
-        if 'url_count' in df.columns:
-            metadata_features.append(df['url_count'].values.reshape(-1, 1))
-        
-        if 'mention_count' in df.columns:
-            metadata_features.append(df['mention_count'].values.reshape(-1, 1))
-        
-        if 'hashtag_count' in df.columns:
-            metadata_features.append(df['hashtag_count'].values.reshape(-1, 1))
-        
-        # Readability features (if available)
-        if 'avg_word_length' in df.columns:
-            metadata_features.append(df['avg_word_length'].values.reshape(-1, 1))
-        
-        if metadata_features:
-            return np.hstack(metadata_features)
-        else:
+        if columns is None:
+            columns = [c for c in METADATA_COLUMNS if c in df.columns]
+        if not columns:
             return np.zeros((len(df), 0))
-    
+        return np.hstack([df[c].values.reshape(-1, 1) for c in columns])
+
     def fit(self, df: pd.DataFrame, y: Optional[np.ndarray] = None):
         """
         Fit feature extractors on training data
@@ -207,7 +183,8 @@ class FeatureExtractor:
         # Fit metadata scaler if using metadata
         if self.use_metadata:
             self.console.print("  Fitting metadata scaler...")
-            metadata_features = self.extract_metadata_features(df)
+            self.metadata_columns_ = [c for c in METADATA_COLUMNS if c in df.columns]
+            metadata_features = self.extract_metadata_features(df, self.metadata_columns_)
             if metadata_features.shape[1] > 0:
                 self.metadata_scaler.fit(metadata_features)
         
@@ -245,7 +222,7 @@ class FeatureExtractor:
         
         # Metadata features
         if self.use_metadata:
-            metadata_features = self.extract_metadata_features(df)
+            metadata_features = self.extract_metadata_features(df, self.metadata_columns_)
             if metadata_features.shape[1] > 0:
                 metadata_features = self.metadata_scaler.transform(metadata_features)
                 features.append(csr_matrix(metadata_features))
@@ -281,20 +258,14 @@ class FeatureExtractor:
         text_names = [f"text_{name}" for name in self.text_vectorizer.get_feature_names_out()]
         feature_names.extend(text_names)
         
-        # Title feature names
-        if hasattr(self, 'title_vectorizer') and hasattr(self.title_vectorizer, 'get_feature_names_out'):
+        # Title feature names (only when a title column was fitted)
+        if hasattr(self, 'title_vectorizer') and hasattr(self.title_vectorizer, 'vocabulary_'):
             title_names = [f"title_{name}" for name in self.title_vectorizer.get_feature_names_out()]
             feature_names.extend(title_names)
         
-        # Metadata feature names
+        # Metadata feature names: the columns actually present at fit time
         if self.use_metadata:
-            metadata_names = [
-                'text_length', 'word_count', 'sentence_count',
-                'punctuation_density', 'capital_ratio',
-                'exclamation_count', 'question_count',
-                'url_count', 'mention_count', 'hashtag_count'
-            ]
-            feature_names.extend([f"meta_{name}" for name in metadata_names])
+            feature_names.extend([f"meta_{name}" for name in self.metadata_columns_])
         
         self.feature_names_ = feature_names
     
@@ -339,6 +310,7 @@ class FeatureExtractor:
             "metadata_scaler": self.metadata_scaler,
             "feature_names_": getattr(self, "feature_names_", None),
             "n_features_": getattr(self, "n_features_", None),
+            "metadata_columns_": getattr(self, "metadata_columns_", []),
         }
         with open(path, "wb") as f:
             pickle.dump(state, f)
@@ -389,6 +361,7 @@ class FeatureExtractor:
         obj.metadata_scaler = state["metadata_scaler"]
         obj.feature_names_ = state.get("feature_names_")
         obj.n_features_ = state.get("n_features_")
+        obj.metadata_columns_ = state.get("metadata_columns_", [])
         return obj
     
     def get_params(self) -> Dict:
