@@ -6,6 +6,7 @@ Supports LIAR and other publicly available datasets
 
 import os
 import sys
+import hashlib
 import requests
 import zipfile
 import tarfile
@@ -20,54 +21,85 @@ sys.path.append(str(Path(__file__).parent))
 from src.config import RAW_DATA_DIR
 from src.utils import console
 
+LIAR_MIRROR = "https://raw.githubusercontent.com/thiagorainmaker77/liar_dataset/master/"
+LIAR_ZIP = "https://sites.cs.ucsb.edu/~william/data/liar_dataset.zip"
+# SHA-256 of the files in the official LIAR release; the mirror serves the same bytes.
+LIAR_SHA256 = {
+    "train.tsv": "23ef8cb7ff57b25c941100d0744039cebc595d65a67ea190f72b330a658d8c36",
+    "valid.tsv": "8dd3d7ed1a11e78ed7df090c9eddb0f91147f895850c78d49dd7b4e88fd09a16",
+    "test.tsv": "ee41e2c741e0019216952625145af8c4aa8c8d3057ec68284b134267bb845e6f",
+}
+TIMEOUT = 60  # seconds to connect, and between bytes received
+
+def sha256_of(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, 'rb') as file:
+        for chunk in iter(lambda: file.read(1 << 20), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
 def download_file(url: str, dest_path: Path, chunk_size: int = 8192):
-    """Download file with progress bar"""
-    response = requests.get(url, stream=True)
-    total_size = int(response.headers.get('content-length', 0))
-    
-    with open(dest_path, 'wb') as file:
-        with tqdm(total=total_size, unit='B', unit_scale=True, desc=dest_path.name) as pbar:
-            for chunk in response.iter_content(chunk_size=chunk_size):
-                file.write(chunk)
-                pbar.update(len(chunk))
+    """Download file with progress bar. HTTP errors raise instead of being saved."""
+    with requests.get(url, stream=True, timeout=TIMEOUT) as response:
+        response.raise_for_status()
+        total_size = int(response.headers.get('content-length', 0))
+        try:
+            with open(dest_path, 'wb') as file:
+                with tqdm(total=total_size, unit='B', unit_scale=True, desc=dest_path.name) as pbar:
+                    for chunk in response.iter_content(chunk_size=chunk_size):
+                        file.write(chunk)
+                        pbar.update(len(chunk))
+        except BaseException:
+            dest_path.unlink(missing_ok=True)
+            raise
+
+def _move_if_verified(part: Path, dest: Path, expected: str):
+    actual = sha256_of(part)
+    if actual != expected:
+        part.unlink()
+        raise ValueError(f"{dest.name}: SHA-256 {actual} does not match the LIAR release ({expected})")
+    part.replace(dest)
 
 def download_liar():
-    """Download LIAR dataset"""
+    """Download LIAR dataset, checking every file against the release checksums"""
     console.print("[cyan]Downloading LIAR dataset...[/cyan]")
-    
-    base_url = "https://raw.githubusercontent.com/thiagorainmaker77/liar_dataset/master/"
-    files = [
-        "train.tsv",
-        "valid.tsv", 
-        "test.tsv"
-    ]
     
     output_dir = RAW_DATA_DIR / "liar"
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    for file in files:
-        url = base_url + file
+    missing = []
+    for file, expected in LIAR_SHA256.items():
         dest = output_dir / file
-        
-        if dest.exists():
+        if dest.exists() and sha256_of(dest) == expected:
             console.print(f"[yellow]{file} already exists, skipping[/yellow]")
-            continue
-        
+        else:
+            missing.append(file)
+    
+    for file in list(missing):
         console.print(f"Downloading {file}...")
+        part = output_dir / f"{file}.part"
         try:
-            download_file(url, dest)
-            console.print(f"[green]✓ Downloaded {file}[/green]")
-        except Exception as e:
+            download_file(LIAR_MIRROR + file, part)
+            _move_if_verified(part, output_dir / file, LIAR_SHA256[file])
+        except (requests.RequestException, ValueError) as e:
             console.print(f"[red]Error downloading {file}: {e}[/red]")
-            console.print("[yellow]Trying alternative source...[/yellow]")
-            
-            # Alternative: Download from backup source
-            alt_url = f"https://www.cs.ucsb.edu/~william/data/liar_dataset/{file}"
-            try:
-                download_file(alt_url, dest)
-                console.print(f"[green]✓ Downloaded {file} from alternative source[/green]")
-            except Exception as e2:
-                console.print(f"[red]Failed to download {file}: {e2}[/red]")
+            continue
+        missing.remove(file)
+        console.print(f"[green]✓ Downloaded {file}[/green]")
+    
+    if missing:
+        console.print("[yellow]Trying the official LIAR archive...[/yellow]")
+        archive_path = output_dir / "liar_dataset.zip.part"
+        try:
+            download_file(LIAR_ZIP, archive_path)
+            with zipfile.ZipFile(archive_path) as archive:
+                for file in missing:
+                    part = output_dir / f"{file}.part"
+                    part.write_bytes(archive.read(file))
+                    _move_if_verified(part, output_dir / file, LIAR_SHA256[file])
+                    console.print(f"[green]✓ Extracted {file} from the official archive[/green]")
+        finally:
+            archive_path.unlink(missing_ok=True)
     
     console.print("[green]✓ LIAR dataset download complete![/green]")
 
@@ -140,7 +172,11 @@ def main():
     RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
     
     if args.dataset == 'liar' or args.dataset == 'all':
-        download_liar()
+        try:
+            download_liar()
+        except (requests.RequestException, ValueError, KeyError, zipfile.BadZipFile) as e:
+            console.print(f"[red]Failed to download LIAR: {e}[/red]")
+            return 1
     
     if args.dataset == 'isot' or args.dataset == 'all':
         download_isot()
@@ -153,9 +189,10 @@ def main():
     console.print("1. Run: python src/data_io.py --dataset [liar|custom]")
     console.print("2. Run: python src/preprocess.py")
     console.print("3. Explore data: jupyter notebook notebooks/01_eda.ipynb")
+    return 0
 
 if __name__ == "__main__":
     # Windows consoles default to a legacy code page; the output uses symbols like ✓.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    main()
+    sys.exit(main())
