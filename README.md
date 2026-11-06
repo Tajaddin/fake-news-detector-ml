@@ -16,7 +16,7 @@ LIAR's six labels are binarized: true, mostly-true and half-true count as real; 
 
 The later rows in `runs.csv` (81-84% accuracy) and the plots in `reports/figs/` come from a 2,185-row test split of a dataset that is not in the repo, so they cannot be reproduced from a clone.
 
-`diagnose_perfect_accuracy.py` is the audit for a score like that. On the sample set it flags the tiny dataset, test rows that appear verbatim in training, class-exclusive vocabularies and repeated templates, while the shuffled-label baseline stays at the majority-class rate.
+`diagnose_perfect_accuracy.py` is the audit for a score like that. On the sample set it flags the tiny dataset, test rows that appear verbatim in training, class-exclusive vocabularies and repeated templates. Its shuffled-label baseline answers a different question, whether the model beats what it scores with no signal at all; permuting the labels hides a leak as well, so the 100% clears it.
 
 | Check | What it looks for |
 |---|---|
@@ -24,8 +24,8 @@ The later rows in `runs.csv` (81-84% accuracy) and the plots in `reports/figs/` 
 | Train/test overlap | test texts that also appear verbatim in training |
 | Class vocabularies | words that occur in only one class |
 | Templates | the same opening repeated more than five times |
-| Shuffled-label baseline | a model trained on permuted training labels and scored on the true test labels; it should match the majority-class rate |
-| Real labels | train and test accuracy with the true labels |
+| Shuffled-label baseline | the same model refit on 50 permutations of the training labels and scored on the true test labels: what it reaches with no signal |
+| Real labels | train and test accuracy with the true labels; NO SIGNAL if test accuracy does not clear the baseline's 95th percentile |
 | Keywords | single words present in most texts of one class |
 
 ## What the pipeline does

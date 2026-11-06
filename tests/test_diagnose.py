@@ -1,14 +1,31 @@
-"""The random-label check must shuffle only the training labels and score the
-model against the true test labels; otherwise it reads about 50% on any data
-and can never flag anything."""
+"""The shuffled-label check is a null baseline for the real-label score: the
+same model refit on many permutations of the training labels and scored on the
+true test labels. A model with real signal clears the 95th percentile of those
+scores; one trained on noise labels does so only about one time in twenty."""
 
 import numpy as np
+from sklearn.base import clone
+from sklearn.linear_model import LogisticRegression
 
-from diagnose_perfect_accuracy import shuffled_label_accuracy
+from diagnose_perfect_accuracy import shuffled_label_baseline
+
+MODEL = LogisticRegression()
+
+
+def _split(seed, signal):
+    rng = np.random.default_rng(seed)
+    X = rng.normal(size=(400, 5))
+    y = (X[:, 0] > 0).astype(int) if signal else rng.integers(0, 2, size=400)
+    return X[:300], y[:300], X[300:], y[300:]
+
+
+def _clears_baseline(X_train, y_train, X_test, y_test):
+    real = clone(MODEL).fit(X_train, y_train).score(X_test, y_test)
+    return real > np.percentile(shuffled_label_baseline(MODEL, X_train, y_train, X_test, y_test), 95)
 
 
 def test_scores_against_the_true_test_labels():
-    # 90% of training labels are positive, and a permutation keeps that, so the
+    # 90% of training labels are positive, and a permutation keeps that, so each
     # model predicts "positive" almost everywhere. Scored on an all-positive
     # test set that is close to 1.0; random test labels would give about 0.5.
     rng = np.random.default_rng(0)
@@ -17,15 +34,26 @@ def test_scores_against_the_true_test_labels():
     X_test = rng.normal(size=(200, 3))
     y_test = np.ones(200, dtype=int)
 
-    assert shuffled_label_accuracy(X_train, y_train, X_test, y_test) > 0.85
+    assert shuffled_label_baseline(MODEL, X_train, y_train, X_test, y_test).mean() > 0.85
 
 
-def test_same_seed_gives_the_same_result():
-    rng = np.random.default_rng(1)
-    X_train, X_test = rng.normal(size=(200, 4)), rng.normal(size=(200, 4))
-    y_train, y_test = rng.integers(0, 2, size=200), rng.integers(0, 2, size=200)
+def test_real_signal_clears_the_baseline():
+    split = _split(seed=0, signal=True)
 
-    by_seed = [shuffled_label_accuracy(X_train, y_train, X_test, y_test, seed=s) for s in range(10)]
+    assert abs(shuffled_label_baseline(MODEL, *split).mean() - 0.5) < 0.05
+    assert _clears_baseline(*split)
 
-    assert shuffled_label_accuracy(X_train, y_train, X_test, y_test, seed=3) == by_seed[3]
-    assert len(set(by_seed)) > 1
+
+def test_noise_labels_rarely_clear_the_baseline():
+    # One permutation, or the mean of many, would be cleared about half the time.
+    cleared = sum(_clears_baseline(*_split(seed, signal=False)) for seed in range(20))
+
+    assert cleared <= 3
+
+
+def test_each_permutation_is_new_and_the_seed_fixes_them():
+    split = _split(seed=1, signal=True)
+    scores = shuffled_label_baseline(MODEL, *split, seed=3)
+
+    assert len(set(scores)) > 1
+    np.testing.assert_array_equal(scores, shuffled_label_baseline(MODEL, *split, seed=3))
