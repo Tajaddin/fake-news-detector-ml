@@ -1,6 +1,6 @@
 """
 Explainability Module for Fake News Detection
-Implements LIME and SHAP for model interpretability (Fixed Attention Logic)
+Implements LIME and attention weights for model interpretability (Fixed Attention Logic)
 """
 
 import numpy as np
@@ -8,7 +8,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from lime.lime_text import LimeTextExplainer
-import shap
 from sklearn.pipeline import make_pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression

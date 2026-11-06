@@ -43,7 +43,6 @@ def test_predict_proba_returns_scores_in_input_order(tiny_model_dir):
 
 def test_attention_analysis_returns_token_weights(tiny_model_dir):
     pytest.importorskip("lime")
-    pytest.importorskip("shap")
     from milestone3_explainability import FakeNewsExplainer
 
     # Skip __init__, which loads the tokenizer from the Hugging Face Hub.

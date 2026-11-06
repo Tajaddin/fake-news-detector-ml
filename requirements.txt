@@ -17,7 +17,6 @@ torch>=2.13.0
 transformers>=5.10.0
 
 # Explainability
-shap>=0.42.0
 lime>=0.2.0
 
 # Utilities

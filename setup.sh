@@ -52,7 +52,6 @@ echo "🧪 Testing installation..."
 python -c "
 import torch
 import transformers
-import shap
 import lime
 print('✅ PyTorch version:', torch.__version__)
 print('✅ Transformers version:', transformers.__version__)
