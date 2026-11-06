@@ -16,13 +16,13 @@ WORDS = ["the", "senate", "passed", "a", "bill", "taxes", "rose", "jobs", "fell"
 @pytest.fixture(scope="module")
 def tiny_model_dir(tmp_path_factory):
     path = tmp_path_factory.mktemp("tiny-distilbert")
-    vocab = path / "vocab.txt"
-    vocab.write_text("\n".join(["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]", *WORDS]) + "\n")
-    transformers.DistilBertTokenizer(vocab_file=str(vocab)).save_pretrained(path)
+    vocab = {token: i for i, token in enumerate(["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]", *WORDS])}
+    # transformers 5 ignores vocab_file=, which leaves every word [UNK].
+    transformers.DistilBertTokenizer(vocab=vocab).save_pretrained(path)
     torch.manual_seed(0)
     config = transformers.DistilBertConfig(
         vocab_size=5 + len(WORDS), dim=16, hidden_dim=32, n_layers=1, n_heads=2,
-        initializer_range=1.0,  # large random weights, so every text scores differently
+        initializer_range=0.5,  # large random weights, so every text scores differently
     )
     transformers.DistilBertForSequenceClassification(config).save_pretrained(path)
     return path
@@ -36,7 +36,8 @@ def test_predict_proba_returns_scores_in_input_order(tiny_model_dir):
     batched = model.predict_proba(texts, batch_size=4)
     _, one_at_a_time = model.predict(texts)
 
-    assert np.ptp(one_at_a_time) > 1e-4  # distinct scores, so order is observable
+    # Every distinct text scores differently, so any reordering would show.
+    assert len(np.unique(one_at_a_time.round(6))) == len(set(texts))
     np.testing.assert_allclose(batched, one_at_a_time, atol=1e-5)
 
 
