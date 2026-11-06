@@ -223,7 +223,9 @@ class FakeNewsTransformer:
         self.model.eval()
         
         # Use DistilBertModel to get attention weights
-        bert_model = DistilBertModel.from_pretrained('distilbert-base-uncased').to(self.device)
+        bert_model = DistilBertModel.from_pretrained(
+            'distilbert-base-uncased', attn_implementation='eager'  # SDPA returns no weights
+        ).to(self.device)
         bert_model.load_state_dict(self.model.distilbert.state_dict())
         
         encoding = self.tokenizer(

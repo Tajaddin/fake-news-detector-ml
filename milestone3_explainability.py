@@ -127,6 +127,8 @@ class FakeNewsExplainer:
     def get_attention_analysis(self, text):
         """Analyze attention patterns in transformer model (Fixed Dimensions)"""
         self.model.eval()
+        # SDPA, the default attention since transformers 5, returns no weights.
+        self.model.set_attn_implementation('eager')
         
         encoding = self.tokenizer(
             text,

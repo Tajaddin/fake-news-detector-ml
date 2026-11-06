@@ -38,3 +38,21 @@ def test_predict_proba_returns_scores_in_input_order(tiny_model_dir):
 
     assert np.ptp(one_at_a_time) > 1e-4  # distinct scores, so order is observable
     np.testing.assert_allclose(batched, one_at_a_time, atol=1e-5)
+
+
+def test_attention_analysis_returns_token_weights(tiny_model_dir):
+    pytest.importorskip("lime")
+    pytest.importorskip("shap")
+    from milestone3_explainability import FakeNewsExplainer
+
+    # Skip __init__, which loads the tokenizer from the Hugging Face Hub.
+    explainer = FakeNewsExplainer.__new__(FakeNewsExplainer)
+    explainer.model = transformers.DistilBertForSequenceClassification.from_pretrained(tiny_model_dir)
+    explainer.tokenizer = transformers.DistilBertTokenizer.from_pretrained(tiny_model_dir)
+    explainer.device = torch.device("cpu")
+
+    text = "the senate passed a bill"
+    tokens = explainer.get_attention_analysis(text)
+
+    # Weights for the sentence's own tokens, not [CLS], [SEP] or padding.
+    assert tokens and all(1 <= t["position"] <= len(text.split()) for t in tokens)
