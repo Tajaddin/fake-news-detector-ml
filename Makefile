@@ -1,6 +1,6 @@
 # Makefile for Fake News Detection Project
 
-.PHONY: help setup download data preprocess eda baseline transformer train evaluate demo clean
+.PHONY: help setup download data preprocess eda baseline transformer train evaluate clean
 
 help:
 	@echo "Fake News Detection Project - Available Commands:"
@@ -13,7 +13,6 @@ help:
 	@echo "  make baseline     Train baseline models"
 	@echo "  make transformer  Train transformer models"
 	@echo "  make evaluate     Evaluate all models"
-	@echo "  make demo         Run demo application"
 	@echo "  make clean        Clean generated files"
 	@echo ""
 	@echo "  make all          Run complete pipeline"
@@ -62,10 +61,6 @@ evaluate:
 	@echo "Evaluating models..."
 	python src/evaluate.py --all
 	@echo "✓ Evaluation complete"
-
-demo:
-	@echo "Starting demo..."
-	streamlit run app/demo_streamlit.py
 
 clean:
 	@echo "Cleaning generated files..."
