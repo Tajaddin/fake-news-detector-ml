@@ -72,8 +72,12 @@ def download_liar():
         dest = output_dir / file
         if dest.exists() and sha256_of(dest) == expected:
             console.print(f"[yellow]{file} already exists, skipping[/yellow]")
-        else:
-            missing.append(file)
+            continue
+        if dest.exists():
+            # Out of the way first, so a failed download cannot leave bad data in place.
+            dest.replace(output_dir / f"{file}.bad")
+            console.print(f"[yellow]{file} does not match the LIAR release; moved it to {file}.bad[/yellow]")
+        missing.append(file)
     
     for file in list(missing):
         console.print(f"Downloading {file}...")

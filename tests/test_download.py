@@ -104,7 +104,18 @@ def test_corrupt_existing_file_is_downloaded_again(liar_dir, monkeypatch):
 
     download_data.download_liar()
 
-    assert _saved(liar_dir) == FILES
+    assert _saved(liar_dir) == {**FILES, "train.tsv.bad": b"truncated"}
+
+
+def test_corrupt_existing_file_is_moved_aside_even_if_the_download_fails(liar_dir, monkeypatch):
+    liar_dir.mkdir()
+    (liar_dir / "train.tsv").write_bytes(b"truncated")
+    _serve(monkeypatch, lambda url: (404, b"not found"))
+
+    with pytest.raises(requests.HTTPError):
+        download_data.download_liar()
+
+    assert _saved(liar_dir) == {"train.tsv.bad": b"truncated"}
 
 
 def test_command_exits_non_zero_when_the_download_fails(liar_dir, monkeypatch):
