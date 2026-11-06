@@ -34,8 +34,11 @@ except ImportError:
                     pd.read_csv(PROCESSED_DATA_DIR/"test_processed.csv"))
 
 from milestone3_transformer_model import FakeNewsTransformer, FakeNewsDataset
-from milestone3_ensemble import FakeNewsEnsemble
+from milestone3_ensemble import FakeNewsEnsemble, out_of_fold_proba
 from milestone3_explainability import FakeNewsExplainer
+
+MODEL_NAME = 'distilbert-base-uncased'
+STACKING_FOLDS = 5
 
 # Ensure directories exist
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
@@ -91,24 +94,29 @@ def main():
     # 2. Transformer Model (DistilBERT)
     # ---------------------------------------------------------
     print("\n[2/6] Training Transformer Model...")
-    transformer = FakeNewsTransformer(model_name='distilbert-base-uncased')
-    
     batch_size = 16 if torch.cuda.is_available() else 8
-    
-    # Create DataLoaders
-    train_loader = TorchDataLoader(FakeNewsDataset(train_texts, y_train, transformer.tokenizer), batch_size=batch_size, shuffle=True)
-    val_loader = TorchDataLoader(FakeNewsDataset(val_texts, y_val, transformer.tokenizer), batch_size=batch_size)
-    test_loader = TorchDataLoader(FakeNewsDataset(test_texts, y_test, transformer.tokenizer), batch_size=batch_size)
 
-    # Train
-    print("Starting training loop (Epochs=1 for speed)...")
-    transformer.train(train_loader, val_loader, epochs=1, learning_rate=2e-5)
-    
-    # Generate Predictions for ALL sets (Needed for Stacking)
-    print("Generating transformer predictions for Ensemble...")
-    _, _, _, (_, _, train_probs) = transformer.evaluate(train_loader) # Critical for stacking
-    _, _, _, (_, _, val_probs) = transformer.evaluate(val_loader)
-    _, _, _, (_, _, test_probs) = transformer.evaluate(test_loader)
+    def fine_tune(texts, labels):
+        model = FakeNewsTransformer(model_name=MODEL_NAME)
+        train_loader = TorchDataLoader(FakeNewsDataset(texts, labels, model.tokenizer), batch_size=batch_size, shuffle=True)
+        val_loader = TorchDataLoader(FakeNewsDataset(val_texts, y_val, model.tokenizer), batch_size=batch_size)
+        model.train(train_loader, val_loader, epochs=1, learning_rate=2e-5)
+        return model
+
+    # The stacking meta-learner needs a transformer score for every training
+    # row from a model that did not train on it, so fine-tune once per fold.
+    def fit_predict(train_idx, held_idx):
+        fold_model = fine_tune([train_texts[i] for i in train_idx], y_train[train_idx])
+        return fold_model.predict_proba([train_texts[i] for i in held_idx], batch_size)
+
+    print(f"Out-of-fold transformer scores ({STACKING_FOLDS} folds, Epochs=1 for speed)...")
+    train_oof_probs = out_of_fold_proba(fit_predict, y_train, n_splits=STACKING_FOLDS)
+
+    # Fine-tuned last so best_transformer_model.pt holds the full-data model.
+    print("Starting training loop on the full training set (Epochs=1 for speed)...")
+    transformer = fine_tune(train_texts, y_train)
+    val_probs = transformer.predict_proba(val_texts, batch_size)
+    test_probs = transformer.predict_proba(test_texts, batch_size)
 
     # ---------------------------------------------------------
     # 3. Vectorize Data (TF-IDF)
@@ -150,12 +158,12 @@ def main():
     ensemble.transformer_probabilities = np.array(val_probs)
     ensemble.optimize_weights(X_val_tfidf, y_val)
     
-    # B. Train Stacking (Needs Train + Val Probs Concatenated)
+    # B. Train Stacking on out-of-fold scores
     print("Training Stacking Meta-Learner...")
-    combined_probs = np.concatenate([train_probs, val_probs])
-    ensemble.transformer_probabilities = combined_probs
-    # This call slices the combined_probs internally based on X_train size
-    ensemble.train_stacking_ensemble(X_train_tfidf, y_train, X_val_tfidf, y_val)
+    ensemble.train_stacking_ensemble(X_train_tfidf, y_train, X_val_tfidf, y_val,
+                                     transformer_train_oof=train_oof_probs,
+                                     transformer_val=val_probs,
+                                     n_splits=STACKING_FOLDS)
 
     # C. Final Evaluation (Needs Test Probs)
     print("Evaluating Ensemble Strategies...")

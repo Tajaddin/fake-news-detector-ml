@@ -202,7 +202,22 @@ class FakeNewsTransformer:
                 probabilities.append(probs[0, 1].item())
         
         return np.array(predictions), np.array(probabilities)
-    
+
+    def predict_proba(self, texts, batch_size=16):
+        """Positive-class probability for each text, in input order"""
+        dataset = FakeNewsDataset(list(texts), [0] * len(texts), self.tokenizer)
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        self.model.eval()
+        probabilities = []
+        with torch.no_grad():
+            for batch in loader:
+                logits = self.model(
+                    input_ids=batch['input_ids'].to(self.device),
+                    attention_mask=batch['attention_mask'].to(self.device)
+                ).logits
+                probabilities.extend(torch.softmax(logits, dim=1)[:, 1].cpu().numpy())
+        return np.array(probabilities)
+
     def get_attention_weights(self, text):
         """Extract attention weights for interpretability"""
         self.model.eval()
