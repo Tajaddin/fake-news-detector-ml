@@ -3,6 +3,7 @@ Comprehensive Diagnosis: Why is the model getting 100% accuracy?
 This script checks all possible causes of unrealistic perfect classification.
 """
 
+import re
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -15,6 +16,16 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
 import warnings
 warnings.filterwarnings('ignore')
+
+
+def _letters_only(text):
+    return ' '.join(re.findall(r'[^\W\d_]+', str(text).lower()))
+
+
+def near_duplicates(train_texts, test_texts):
+    """Test texts that equal a training text once case, digits and punctuation are ignored."""
+    seen = {_letters_only(text) for text in train_texts} - {''}
+    return [text for text in test_texts if _letters_only(text) in seen]
 
 
 def shuffled_label_baseline(model, X_train, y_train, X_test, y_test, n_permutations=50, seed=42):
@@ -75,6 +86,14 @@ def diagnose_perfect_accuracy():
         print("   Example leaked text:", list(overlap)[0][:100] + "...")
     else:
         print("   ✓ No direct text overlap between train and test")
+    
+    # Near-duplicates, such as the sample set's rows, which differ only in a number
+    near = near_duplicates(train_df['text'], test_df['text'])
+    print(f"   Test rows matching a training text apart from case, digits and punctuation: "
+          f"{len(near)} of {len(test_df)}")
+    if near:
+        issues_found.append(f"DATA LEAKAGE: {len(near)} of {len(test_df)} test rows match a training text "
+                            f"once case, digits and punctuation are ignored")
     
     # 3. Check for artificially distinct patterns
     print("\n3. CHECKING FOR ARTIFICIAL PATTERNS...")

@@ -1,13 +1,15 @@
-"""The shuffled-label check is a null baseline for the real-label score: the
-same model refit on many permutations of the training labels and scored on the
-true test labels. A model with real signal clears the 95th percentile of those
-scores; one trained on noise labels does so only about one time in twenty."""
+"""The leak check must catch test rows that differ from a training row only in
+digits or punctuation. The shuffled-label check is a null baseline for the
+real-label score: the same model refit on many permutations of the training
+labels and scored on the true test labels. A model with real signal clears the
+95th percentile of those scores; one trained on noise labels does so only about
+one time in twenty."""
 
 import numpy as np
 from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
 
-from diagnose_perfect_accuracy import shuffled_label_baseline
+from diagnose_perfect_accuracy import near_duplicates, shuffled_label_baseline
 
 MODEL = LogisticRegression()
 
@@ -17,6 +19,13 @@ def _split(seed, signal):
     X = rng.normal(size=(400, 5))
     y = (X[:, 0] > 0).astype(int) if signal else rng.integers(0, 2, size=400)
     return X[:300], y[:300], X[300:], y[300:]
+
+
+def test_near_duplicates_ignore_case_digits_and_punctuation():
+    train = ["Miracle cure found! Additional context 12.", "Budget approved.", "2024"]
+    test = ["miracle cure found additional context 87", "Budget approved for roads.", "Budget approved", "99"]
+
+    assert near_duplicates(train, test) == ["miracle cure found additional context 87", "Budget approved"]
 
 
 def _clears_baseline(X_train, y_train, X_test, y_test):
