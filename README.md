@@ -113,7 +113,7 @@ fake-news-detector-ml/
 
 ## Plots in `reports/figs/`
 
-The five logistic-regression plots come from the earlier 2,185-row dataset that is not in the repo (see above), not from LIAR.
+The five logistic-regression plots come from the earlier 2,185-row dataset that is not in the repo (see above), not from LIAR. `milestone3_explanation.png` is not from LIAR either: it explains a celebrity-news headline from an earlier, non-LIAR dataset, in a run of `milestone3_main.py` made before the stacking and attention fixes.
 
 | File | What it shows |
 |---|---|
@@ -122,7 +122,7 @@ The five logistic-regression plots come from the earlier 2,185-row dataset that 
 | `pr_curve_logistic_regression_42.png` | Precision-recall |
 | `calibration_logistic_regression_42.png` | Reliability diagram |
 | `threshold_analysis_logistic_regression_42.png` | Precision and recall vs decision threshold |
-| `milestone3_explanation.png` | LIME word weights and attention for one example |
+| `milestone3_explanation.png` | LIME word weights and attention for one headline from the earlier dataset |
 
 ## License
 
