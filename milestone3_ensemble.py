@@ -35,6 +35,21 @@ def out_of_fold_proba(fit_predict, labels, n_splits=5, random_state=42):
     return scores
 
 
+def out_of_fold_text_proba(fit_score, texts, labels, n_splits=5, random_state=42):
+    """out_of_fold_proba for a model that reads raw text.
+
+    fit_score(train_texts, train_labels, held_texts) must train a fresh model
+    and return its positive-class probabilities for held_texts, in that order.
+    """
+    labels = np.asarray(labels)
+
+    def fit_predict(train_idx, held_idx):
+        return fit_score([texts[i] for i in train_idx], labels[train_idx],
+                         [texts[i] for i in held_idx])
+
+    return out_of_fold_proba(fit_predict, labels, n_splits, random_state)
+
+
 def _positive_score(model, X):
     if hasattr(model, 'predict_proba'):
         return model.predict_proba(X)[:, 1]

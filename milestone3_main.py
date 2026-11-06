@@ -34,7 +34,7 @@ except ImportError:
                     pd.read_csv(PROCESSED_DATA_DIR/"test_processed.csv"))
 
 from milestone3_transformer_model import FakeNewsTransformer, FakeNewsDataset
-from milestone3_ensemble import FakeNewsEnsemble, out_of_fold_proba
+from milestone3_ensemble import FakeNewsEnsemble, out_of_fold_text_proba
 from milestone3_explainability import FakeNewsExplainer
 
 MODEL_NAME = 'distilbert-base-uncased'
@@ -105,12 +105,11 @@ def main():
 
     # The stacking meta-learner needs a transformer score for every training
     # row from a model that did not train on it, so fine-tune once per fold.
-    def fit_predict(train_idx, held_idx):
-        fold_model = fine_tune([train_texts[i] for i in train_idx], y_train[train_idx])
-        return fold_model.predict_proba([train_texts[i] for i in held_idx], batch_size)
+    def fit_score(texts, labels, held_texts):
+        return fine_tune(texts, labels).predict_proba(held_texts, batch_size)
 
     print(f"Out-of-fold transformer scores ({STACKING_FOLDS} folds, Epochs=1 for speed)...")
-    train_oof_probs = out_of_fold_proba(fit_predict, y_train, n_splits=STACKING_FOLDS)
+    train_oof_probs = out_of_fold_text_proba(fit_score, train_texts, y_train, n_splits=STACKING_FOLDS)
 
     # Fine-tuned last so best_transformer_model.pt holds the full-data model.
     print("Starting training loop on the full training set (Epochs=1 for speed)...")

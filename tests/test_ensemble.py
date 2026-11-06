@@ -4,7 +4,7 @@ rows they never saw, and keep every score paired with its own row's label."""
 import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 
-from milestone3_ensemble import FakeNewsEnsemble, out_of_fold_proba
+from milestone3_ensemble import FakeNewsEnsemble, out_of_fold_proba, out_of_fold_text_proba
 
 
 def _noise(n, seed):
@@ -61,3 +61,21 @@ def test_out_of_fold_proba_scores_each_row_with_a_model_that_never_saw_it():
     np.testing.assert_allclose(scores, np.arange(20) / 100.0)
     assert sorted(training_rows_of_scorer) == list(range(20))
     assert all(i not in rows for i, rows in training_rows_of_scorer.items())
+
+
+def test_text_model_scores_land_on_their_own_rows():
+    # milestone3_main fine-tunes DistilBERT through this; every text carries
+    # its own score, so a score on the wrong row would show.
+    texts = [f"statement {i}" for i in range(30)]
+    labels = np.array([0, 1, 1] * 10)
+    held_out_texts_seen_in_training = []
+
+    def fit_score(train_texts, train_labels, held_texts):
+        assert [labels[texts.index(t)] for t in train_texts] == list(train_labels)
+        held_out_texts_seen_in_training.extend(t for t in held_texts if t in train_texts)
+        return np.array([texts.index(t) / 100.0 for t in held_texts])
+
+    scores = out_of_fold_text_proba(fit_score, texts, labels, n_splits=5)
+
+    np.testing.assert_allclose(scores, np.arange(30) / 100.0)
+    assert held_out_texts_seen_in_training == []
