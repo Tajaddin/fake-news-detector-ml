@@ -15,6 +15,20 @@ from sklearn.metrics import accuracy_score, f1_score
 import warnings
 warnings.filterwarnings('ignore')
 
+
+def shuffled_label_accuracy(X_train, y_train, X_test, y_test, seed=42):
+    """Test accuracy of a model trained on permuted training labels.
+
+    Permuting only the training labels keeps their class balance but cuts every
+    link between text and label, so this is what the pipeline scores with no
+    signal: expect the majority-class rate. The real-label score means
+    something only by its margin over this number.
+    """
+    shuffled = np.random.default_rng(seed).permutation(np.asarray(y_train))
+    model = LogisticRegression(random_state=seed).fit(X_train, shuffled)
+    return model.score(X_test, y_test)
+
+
 def diagnose_perfect_accuracy():
     """Run comprehensive diagnosis"""
     
@@ -108,30 +122,26 @@ def diagnose_perfect_accuracy():
     if fake_starts.iloc[0] <= 5 and real_starts.iloc[0] <= 5:
         print("   ✓ No obvious template patterns detected")
     
-    # 5. Test with random permutation
-    print("\n5. TESTING WITH RANDOM LABELS...")
+    # 5. Test with permuted training labels
+    print("\n5. TESTING WITH SHUFFLED TRAINING LABELS...")
     print("-"*50)
-    
-    # Shuffle labels randomly
-    y_train_random = np.random.randint(0, 2, size=len(train_df))
-    y_test_random = np.random.randint(0, 2, size=len(test_df))
-    
-    # Train simple model with random labels
+
     vectorizer = TfidfVectorizer(max_features=1000, min_df=2, max_df=0.95)
     X_train = vectorizer.fit_transform(train_df['text'])
     X_test = vectorizer.transform(test_df['text'])
-    
-    model = LogisticRegression(random_state=42)
-    model.fit(X_train, y_train_random)
-    
-    random_acc = model.score(X_test, y_test_random)
-    print(f"   Accuracy with random labels: {random_acc:.3f}")
-    
-    if random_acc < 0.6:
-        print("   ✓ Random labels give poor accuracy (as expected)")
+
+    y_test_true = test_df['label'].values
+    random_acc = shuffled_label_accuracy(X_train, train_df['label'].values, X_test, y_test_true)
+    majority_acc = max(y_test_true.mean(), 1 - y_test_true.mean())
+    print(f"   Accuracy with shuffled training labels: {random_acc:.3f} "
+          f"(majority class: {majority_acc:.3f})")
+
+    if random_acc <= majority_acc + 0.05:
+        print("   ✓ No better than predicting the majority class (as expected)")
     else:
-        print("   ⚠️ Even random labels give decent accuracy!")
-        issues_found.append(f"OVERFITTING: Random labels achieve {random_acc:.1%} accuracy")
+        print("   ⚠️ Scores above chance without any label signal!")
+        issues_found.append(f"EVALUATION LEAK: shuffled training labels still reach {random_acc:.1%} "
+                            f"accuracy (majority class {majority_acc:.1%})")
     
     # 6. Train with real labels for comparison
     print("\n6. TESTING WITH REAL LABELS...")
