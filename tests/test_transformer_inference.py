@@ -57,3 +57,17 @@ def test_attention_analysis_returns_token_weights(tiny_model_dir):
 
     # Weights for the sentence's own tokens, not [CLS], [SEP] or padding.
     assert tokens and all(1 <= t["position"] <= len(text.split()) for t in tokens)
+    # Eager attention only for this call; later forward passes keep SDPA.
+    assert explainer.model.config._attn_implementation == "sdpa"
+
+
+def test_attention_weights_come_from_the_loaded_model(tiny_model_dir):
+    # A hard-coded distilbert-base-uncased download would not fit this tiny model.
+    model = FakeNewsTransformer(model_name=str(tiny_model_dir))
+    text = "the senate passed a bill"
+
+    weights = model.get_attention_weights(text)
+
+    assert set(weights) == set(text.split())
+    assert all(isinstance(w, float) and w > 0 for w in weights.values())
+    assert model.model.config._attn_implementation == "sdpa"

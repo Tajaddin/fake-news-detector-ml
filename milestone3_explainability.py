@@ -14,6 +14,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 import torch
 from transformers import DistilBertTokenizer
+from milestone3_transformer_model import eager_attention
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -127,8 +128,6 @@ class FakeNewsExplainer:
     def get_attention_analysis(self, text):
         """Analyze attention patterns in transformer model (Fixed Dimensions)"""
         self.model.eval()
-        # SDPA, the default attention since transformers 5, returns no weights.
-        self.model.set_attn_implementation('eager')
         
         encoding = self.tokenizer(
             text,
@@ -141,7 +140,7 @@ class FakeNewsExplainer:
         input_ids = encoding['input_ids'].to(self.device)
         attention_mask = encoding['attention_mask'].to(self.device)
         
-        with torch.no_grad():
+        with eager_attention(self.model), torch.no_grad():
             outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,

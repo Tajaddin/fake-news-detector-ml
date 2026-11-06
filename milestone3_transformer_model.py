@@ -4,6 +4,8 @@ Student Proud Project - Machine Learning
 Tajaddin Gafarov
 """
 
+from contextlib import contextmanager
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -12,7 +14,6 @@ from torch.optim import AdamW
 from transformers import (
     DistilBertTokenizer, 
     DistilBertForSequenceClassification,
-    DistilBertModel,
     get_linear_schedule_with_warmup
 )
 from torch.utils.data import Dataset, DataLoader
@@ -22,6 +23,18 @@ import pickle
 from tqdm import tqdm
 import warnings
 warnings.filterwarnings('ignore')
+
+
+@contextmanager
+def eager_attention(model):
+    """Run the model with eager attention, which unlike the default SDPA returns attention weights."""
+    previous = model.config._attn_implementation
+    model.set_attn_implementation('eager')
+    try:
+        yield model
+    finally:
+        model.set_attn_implementation(previous)
+
 
 # Custom Dataset for BERT
 class FakeNewsDataset(Dataset):
@@ -222,12 +235,6 @@ class FakeNewsTransformer:
         """Extract attention weights for interpretability"""
         self.model.eval()
         
-        # Use DistilBertModel to get attention weights
-        bert_model = DistilBertModel.from_pretrained(
-            'distilbert-base-uncased', attn_implementation='eager'  # SDPA returns no weights
-        ).to(self.device)
-        bert_model.load_state_dict(self.model.distilbert.state_dict())
-        
         encoding = self.tokenizer(
             text,
             truncation=True,
@@ -240,8 +247,8 @@ class FakeNewsTransformer:
         input_ids = encoding['input_ids'].to(self.device)
         attention_mask = encoding['attention_mask'].to(self.device)
         
-        with torch.no_grad():
-            outputs = bert_model(
+        with eager_attention(self.model), torch.no_grad():
+            outputs = self.model.distilbert(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 output_attentions=True
@@ -251,13 +258,15 @@ class FakeNewsTransformer:
         attentions = outputs.attentions
         avg_attention = torch.mean(torch.stack(attentions), dim=0)
         avg_attention = torch.mean(avg_attention, dim=1)[0]
+        # One score per token: the attention it receives, averaged over all positions
+        received = torch.mean(avg_attention, dim=0)
         
         # Get tokens
         tokens = self.tokenizer.convert_ids_to_tokens(input_ids[0].cpu().numpy())
         
         # Create attention dictionary
         token_attention = {}
-        for token, attention in zip(tokens, avg_attention.cpu().numpy()):
+        for token, attention in zip(tokens, received.cpu().numpy()):
             if token not in ['[PAD]', '[CLS]', '[SEP]']:
                 token_attention[token] = float(attention)
         
