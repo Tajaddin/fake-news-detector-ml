@@ -1,0 +1,13 @@
+# Baseline pipeline: download, split, TF-IDF + logistic regression, tests.
+# requirements-baseline.txt pins these and every dependency, with hashes:
+#   uv pip compile requirements-baseline.in --universal --python-version 3.11 --generate-hashes -o requirements-baseline.txt
+joblib
+nltk
+numpy
+pandas
+pytest
+requests
+rich
+scikit-learn
+scipy
+tqdm

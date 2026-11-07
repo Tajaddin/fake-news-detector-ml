@@ -4,9 +4,9 @@ test split. Self-contained (depends only on scikit-learn + pandas) so it runs
 in CI without the transformer stack.
 
 Reports accuracy, precision, recall, F1, and ROC-AUC on the canonical 1,267-row
-LIAR test set. Unlike the leakage-prone ISOT corpus (which trivially hits
-99-100%), LIAR is a real, hard short-statement task, so these numbers reflect
-genuine signal.
+LIAR test set. Unlike the synthetic sample set (whose test sentences repeat
+training sentences, so every model hits 100%), LIAR is a real, hard
+short-statement task, so these numbers reflect genuine signal.
 
     python src/eval_holdout.py
 """

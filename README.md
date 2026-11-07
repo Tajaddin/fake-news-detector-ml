@@ -1,76 +1,84 @@
 # fake-news-detector-ml
 
-End-to-end fake news classifier with classical baselines, a fine-tuned transformer, ensemble voting, SHAP and LIME explainability, MLflow tracking, and a Streamlit demo. Built across three milestones for a graduate ML course.
+Fake-news classification built across three milestones for a graduate ML course: classical baselines on TF-IDF features, a fine-tuned DistilBERT, an ensemble (weighted average, majority vote and stacking), and LIME explanations.
 
-## The honest finding
+## Result
 
-The headline result of this project is a negative one. Trained on the standard ISOT-style fake-vs-real news corpus, logistic regression hits 99 to 100 percent test accuracy out of the box. Real-world performance does not match.
+| Test set | Model | Accuracy | ROC-AUC | F1 | Evidence |
+|---|---|---|---|---|---|
+| LIAR held-out test, 1,267 statements | TF-IDF (1-2 grams) + logistic regression | 62.1% | 0.676 | 0.561 | `experiments/holdout_baseline.json`; CI reruns it and `tests/test_eval_holdout.py` asserts it |
 
-`diagnose_perfect_accuracy.py` runs a six-step data audit: dataset size check, train/test text overlap, label-leaking metadata (publisher names, datetime artifacts, URL fragments), random-label baseline, train vs test accuracy gap, and seed sensitivity. The audit confirms publisher and stylistic leakage drive most of the apparent accuracy. The README treats this as the headline finding, not a footnote.
+LIAR's six labels are binarized: true, mostly-true and half-true count as real; false, barely-true and pants-fire as fake. The model reads the statement and its context field but not the speaker, so it cannot score a statement by its speaker's track record.
 
-| Check | Result |
+## Where the 100% came from
+
+`experiments/runs.csv` also logs a perfect 1.0 for every model. Those rows come from the synthetic sample set, not from real news. `run_phase1.sh` builds it with `download_data.py --dataset sample`: ten sentences, each repeated 50 times with a random "Additional context N." suffix. `run_phase2.sh` then trains the experiments named in those rows (`baseline_lr`, `baseline_svm`, `baseline_nb`, `baseline_cnb`, `cv_baseline`). With 500 rows made from ten sentences, every test sentence also appears in training, so any model scores 100%. Rerunning those steps reproduces 1.0 for all four models with the same selected hyperparameters (C = 0.01, alpha = 0.01).
+
+The later rows in `runs.csv` (81-84% accuracy) and the plots in `reports/figs/` come from a 2,185-row test split of a dataset that is not in the repo, so they cannot be reproduced from a clone.
+
+`diagnose_perfect_accuracy.py` is the audit for a score like that. On the sample set it flags the tiny dataset, test rows that appear verbatim in training, every test row matching a training row once the number suffix is ignored, class-exclusive vocabularies and repeated templates. Its shuffled-label baseline answers a different question, whether the model beats what it scores with no signal at all; permuting the labels hides a leak as well, so the 100% clears it.
+
+| Check | What it looks for |
 |---|---|
-| Dataset size | Single-digit thousands per class, low diversity |
-| Random-label baseline | Above chance, signals leakage |
-| Train vs test gap | Near zero, signals memorized dataset features |
-| Publisher leak | Reuters and PolitiFact mark labels through dateline patterns |
-
-The classification numbers in this repo are not generalizable claims about real-world fake-news detection. They are a teaching artifact about why you do not trust a 100 percent test score.
+| Dataset size | fewer than 1,000 rows |
+| Train/test overlap | test texts that also appear in training, verbatim or once case, digits and punctuation are ignored |
+| Class vocabularies | words that occur in only one class |
+| Templates | the same opening repeated more than five times |
+| Shuffled-label baseline | the same model refit on 50 permutations of the training labels and scored on the true test labels: what it reaches with no signal |
+| Real labels | train and test accuracy with the true labels; NO SIGNAL if test accuracy does not clear the baseline's 95th percentile |
+| Keywords | single words present in most texts of one class |
 
 ## What the pipeline does
 
 | Stage | Module |
 |---|---|
-| Download | `download_data.py` pulls the ISOT-style corpus |
-| Preprocess | `src/preprocess.py` cleans HTML, normalizes whitespace, strips bylines |
-| Features | `src/features.py` builds TF-IDF and handcrafted stylistic features |
-| Baselines | `src/models_baseline.py` trains Logistic Regression, SVM, Random Forest, XGBoost |
-| Transformer | `milestone3_transformer_model.py` fine-tunes a HuggingFace classifier head |
-| Ensemble | `milestone3_ensemble.py` runs soft-voting across baseline plus transformer |
-| Explainability | `milestone3_explainability.py` writes SHAP and LIME per-instance attributions |
-| Demo | `milestone3_main.py` (Streamlit) accepts a pasted article and returns prediction plus top SHAP tokens |
+| Download | `download_data.py` fetches LIAR and checks each file against the SHA-256 of the official release; `--dataset sample` writes the synthetic set |
+| Split | `src/data_io.py` keeps LIAR's own train/valid/test split |
+| Preprocess | `src/preprocess.py` strips HTML, URLs, e-mail addresses and @-mentions, normalizes whitespace |
+| Features | `src/features.py` builds TF-IDF plus stylistic counts (length, punctuation, capitals, URLs, mentions) |
+| Baselines | `src/models_baseline.py`: logistic regression, linear SVM, multinomial and complement naive Bayes, random forest, gradient boosting, with grid search |
+| Held-out evaluation | `src/eval_holdout.py` |
+| Transformer | `milestone3_transformer_model.py` fine-tunes `distilbert-base-uncased` |
+| Ensemble | `milestone3_ensemble.py`: weighted average, majority vote, and stacking with a logistic-regression meta-learner trained on out-of-fold scores |
+| Explainability | `milestone3_explainability.py`: LIME word weights and DistilBERT attention |
+| Milestone 3 run | `milestone3_main.py` trains the transformer and the ensemble, then explains one test example |
+
+`milestone3_main.py` has not been rerun on LIAR since the stacking fix. It fine-tunes DistilBERT six times (once per fold for the out-of-fold stacking scores, then on the full training set) and wants a GPU; on CPU it uses only the first 500 training rows.
 
 ## Stack
 
-Python, scikit-learn, XGBoost, HuggingFace Transformers, PyTorch, SHAP, LIME, MLflow, Streamlit, pandas, numpy.
+Python, scikit-learn, PyTorch, Hugging Face Transformers, LIME, pandas, numpy.
 
 ## How to run
 
-Prerequisites: Python 3.11+ (CPU is enough for the baseline; transformer phase wants CUDA).
+Prerequisites: Python 3.11+ (CPU is enough for the baseline; the transformer phase wants CUDA).
 
 ```bash
-# baseline LR pipeline (sklearn stack only — no torch needed)
-pip install pandas numpy scikit-learn scipy requests rich nltk joblib pytest
+# baseline LR pipeline (sklearn stack only, pinned with hashes, no torch)
+pip install -r requirements-baseline.txt
 python download_data.py --dataset liar
 python src/data_io.py --dataset liar --format csv
-python src/eval_holdout.py        # reproduces the 62.1% acc / 0.676 AUC hero on the LIAR held-out test
-pytest -q                         # 25 tests: preprocessing, feature extraction, splits, and the held-out metric
+python src/eval_holdout.py        # reproduces the 62.1% acc / 0.676 AUC result on the LIAR held-out test
+pytest -q                         # unit tests plus the held-out regression check
 ```
 
-Two-phase scripts ship with the repo:
+Transformer, ensemble and explanation (after the LIAR split above):
 
 ```
-bash setup.sh          # venv plus pip install
-bash run_phase1.sh     # baseline pipeline (download, preprocess, train, eval)
-bash run_phase2.sh     # transformer, ensemble, explainability
+pip install -r requirements.txt
+python milestone3_main.py
 ```
 
-Or step by step:
+To reproduce the 100% result and the audit on the synthetic sample set:
 
 ```
-python download_data.py
-make train_baseline
-python milestone3_transformer_model.py
-python milestone3_ensemble.py
-python milestone3_explainability.py
-streamlit run milestone3_main.py
-```
-
-To reproduce the data-quality audit:
-
-```
+python download_data.py --dataset sample
+python src/data_io.py --dataset custom --format csv
+python src/preprocess.py
 python diagnose_perfect_accuracy.py
 ```
+
+`setup.sh`, `run_phase1.sh` and `run_phase2.sh` are the original milestone scripts (conda). `run_phase1.sh` builds the synthetic sample set, so their scores are 100% by construction.
 
 ## Repository layout
 
@@ -81,26 +89,31 @@ fake-news-detector-ml/
     data_io.py             Loader and split helper
     preprocess.py          Text cleaning pipeline
     features.py            TF-IDF plus stylistic features
-    models_baseline.py     Four classical classifiers with grid search
+    models_baseline.py     Classical classifiers with grid search
     train.py               Baseline training entry point
     evaluate.py            Per-model metric reporter
-    utils.py               MLflow logging helpers
-  milestone3_main.py             Streamlit demo
-  milestone3_transformer_model.py Fine-tunes a HF classifier head
-  milestone3_ensemble.py         Soft-voting across baselines plus transformer
-  milestone3_explainability.py   SHAP and LIME outputs
-  diagnose_perfect_accuracy.py   Six-step data audit
+    eval_holdout.py        Held-out LIAR evaluation
+    utils.py               Seeding, CSV experiment log, console helpers
+  milestone3_main.py             Milestone 3 batch run
+  milestone3_transformer_model.py Fine-tunes DistilBERT
+  milestone3_ensemble.py         Weighted average, majority vote and stacking
+  milestone3_explainability.py   LIME and attention outputs
+  diagnose_perfect_accuracy.py   Data audit
   check_raw_data.py              Raw corpus integrity check
   investigate_data.py            Bias and overlap probes
-  tests/                         pytest suite (preprocess, features, data_io, eval_holdout)
+  tests/                         pytest suite (download, preprocess, features, data_io, eval_holdout, ensemble, transformer inference, audit)
   test_features.py               Manual inspection script for a trained model (not a pytest test)
   notebooks/01_eda.ipynb         EDA notebook plus .py mirror
   reports/figs/                  Confusion matrix, ROC, PR, threshold, calibration plots
-  run_phase1.sh, run_phase2.sh   Two-phase runners
-  Makefile                       train_baseline, eval, clean targets
+  requirements-baseline.txt      Hash-pinned baseline dependencies (used by CI)
+  requirements.txt               Full pipeline dependencies
+  run_phase1.sh, run_phase2.sh   Original milestone scripts (synthetic sample set)
+  Makefile                       download, data, preprocess, baseline, evaluate and clean targets
 ```
 
 ## Plots in `reports/figs/`
+
+The five logistic-regression plots come from the earlier 2,185-row dataset that is not in the repo (see above), not from LIAR. `milestone3_explanation.png` is not from LIAR either: it explains a celebrity-news headline from an earlier, non-LIAR dataset, in a run of `milestone3_main.py` made before the stacking and attention fixes.
 
 | File | What it shows |
 |---|---|
@@ -109,7 +122,7 @@ fake-news-detector-ml/
 | `pr_curve_logistic_regression_42.png` | Precision-recall |
 | `calibration_logistic_regression_42.png` | Reliability diagram |
 | `threshold_analysis_logistic_regression_42.png` | Precision and recall vs decision threshold |
-| `milestone3_explanation.png` | SHAP token attribution sample |
+| `milestone3_explanation.png` | LIME word weights and attention for one headline from the earlier dataset |
 
 ## License
 

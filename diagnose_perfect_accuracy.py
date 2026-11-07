@@ -3,17 +3,45 @@ Comprehensive Diagnosis: Why is the model getting 100% accuracy?
 This script checks all possible causes of unrealistic perfect classification.
 """
 
+import re
 import pandas as pd
 import numpy as np
 from pathlib import Path
 import sys
 import joblib
+from sklearn.base import clone
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score
 import warnings
 warnings.filterwarnings('ignore')
+
+
+def _letters_only(text):
+    return ' '.join(re.findall(r'[^\W\d_]+', str(text).lower()))
+
+
+def near_duplicates(train_texts, test_texts):
+    """Test texts that equal a training text once case, digits and punctuation are ignored."""
+    seen = {_letters_only(text) for text in train_texts} - {''}
+    return [text for text in test_texts if _letters_only(text) in seen]
+
+
+def shuffled_label_baseline(model, X_train, y_train, X_test, y_test, n_permutations=50, seed=42):
+    """Test accuracies of the model refit on permuted training labels.
+
+    A permutation keeps the class balance but cuts every link between text and
+    label, so these scores are what the model reaches on this split with no
+    signal; they center on the majority-class rate. The real-label score means
+    something only if it clears them. This is a null baseline, not a leak
+    detector: permuting the labels hides a leak as well.
+    """
+    rng = np.random.default_rng(seed)
+    y_train = np.asarray(y_train)
+    return np.array([clone(model).fit(X_train, rng.permutation(y_train)).score(X_test, y_test)
+                     for _ in range(n_permutations)])
+
 
 def diagnose_perfect_accuracy():
     """Run comprehensive diagnosis"""
@@ -58,6 +86,14 @@ def diagnose_perfect_accuracy():
         print("   Example leaked text:", list(overlap)[0][:100] + "...")
     else:
         print("   ✓ No direct text overlap between train and test")
+    
+    # Near-duplicates, such as the sample set's rows, which differ only in a number
+    near = near_duplicates(train_df['text'], test_df['text'])
+    print(f"   Test rows matching a training text apart from case, digits and punctuation: "
+          f"{len(near)} of {len(test_df)}")
+    if near:
+        issues_found.append(f"DATA LEAKAGE: {len(near)} of {len(test_df)} test rows match a training text "
+                            f"once case, digits and punctuation are ignored")
     
     # 3. Check for artificially distinct patterns
     print("\n3. CHECKING FOR ARTIFICIAL PATTERNS...")
@@ -108,46 +144,42 @@ def diagnose_perfect_accuracy():
     if fake_starts.iloc[0] <= 5 and real_starts.iloc[0] <= 5:
         print("   ✓ No obvious template patterns detected")
     
-    # 5. Test with random permutation
-    print("\n5. TESTING WITH RANDOM LABELS...")
+    # 5. Null baseline: the same model refit on permuted training labels
+    print("\n5. BUILDING A SHUFFLED-LABEL BASELINE...")
     print("-"*50)
-    
-    # Shuffle labels randomly
-    y_train_random = np.random.randint(0, 2, size=len(train_df))
-    y_test_random = np.random.randint(0, 2, size=len(test_df))
-    
-    # Train simple model with random labels
+
     vectorizer = TfidfVectorizer(max_features=1000, min_df=2, max_df=0.95)
     X_train = vectorizer.fit_transform(train_df['text'])
     X_test = vectorizer.transform(test_df['text'])
-    
-    model = LogisticRegression(random_state=42)
-    model.fit(X_train, y_train_random)
-    
-    random_acc = model.score(X_test, y_test_random)
-    print(f"   Accuracy with random labels: {random_acc:.3f}")
-    
-    if random_acc < 0.6:
-        print("   ✓ Random labels give poor accuracy (as expected)")
-    else:
-        print("   ⚠️ Even random labels give decent accuracy!")
-        issues_found.append(f"OVERFITTING: Random labels achieve {random_acc:.1%} accuracy")
-    
+
+    y_train_real = train_df['label'].values
+    y_test_real = test_df['label'].values
+    model = LogisticRegression(random_state=42, C=0.01)
+
+    null_scores = shuffled_label_baseline(model, X_train, y_train_real, X_test, y_test_real)
+    null_p95 = np.percentile(null_scores, 95)
+    majority_acc = max(y_test_real.mean(), 1 - y_test_real.mean())
+    print(f"   Test accuracy over {len(null_scores)} label permutations: mean {null_scores.mean():.3f}, "
+          f"95th percentile {null_p95:.3f} (majority class: {majority_acc:.3f})")
+
     # 6. Train with real labels for comparison
     print("\n6. TESTING WITH REAL LABELS...")
     print("-"*50)
     
-    y_train_real = train_df['label'].values
-    y_test_real = test_df['label'].values
-    
-    model_real = LogisticRegression(random_state=42, C=0.01)
-    model_real.fit(X_train, y_train_real)
+    model_real = clone(model).fit(X_train, y_train_real)
     
     real_acc = model_real.score(X_test, y_test_real)
     train_acc = model_real.score(X_train, y_train_real)
     
     print(f"   Training accuracy: {train_acc:.3f}")
     print(f"   Test accuracy: {real_acc:.3f}")
+    
+    if real_acc <= null_p95:
+        issues_found.append(f"NO SIGNAL: {real_acc:.1%} test accuracy does not beat the shuffled-label "
+                            f"baseline's 95th percentile ({null_p95:.1%})")
+        print("   ⚠️ No better than the same model trained on shuffled labels!")
+    else:
+        print(f"   ✓ Beats the shuffled-label baseline's 95th percentile ({null_p95:.3f})")
     
     if real_acc >= 0.99:
         issues_found.append(f"PERFECT CLASSIFICATION: {real_acc:.1%} test accuracy")
@@ -220,6 +252,9 @@ def diagnose_perfect_accuracy():
         elif "KEYWORD PATTERN" in str(issues_found):
             print("   Your data has obvious keyword patterns that make classification trivial!")
             print("   Fix: Use more realistic, diverse data.")
+        elif "NO SIGNAL" in str(issues_found):
+            print("   The model does no better than it does with shuffled labels!")
+            print("   Fix: Check that the labels match the texts and that the features carry signal.")
         
         print("\n💡 RECOMMENDATIONS:")
         print("   1. Use a standard fake news dataset from research papers")

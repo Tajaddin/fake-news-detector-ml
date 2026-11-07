@@ -1,6 +1,6 @@
 """
 Explainability Module for Fake News Detection
-Implements LIME and SHAP for model interpretability (Fixed Attention Logic)
+Implements LIME and attention weights for model interpretability (Fixed Attention Logic)
 """
 
 import numpy as np
@@ -8,12 +8,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from lime.lime_text import LimeTextExplainer
-import shap
 from sklearn.pipeline import make_pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 import torch
 from transformers import DistilBertTokenizer
+from milestone3_transformer_model import eager_attention
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -139,7 +139,7 @@ class FakeNewsExplainer:
         input_ids = encoding['input_ids'].to(self.device)
         attention_mask = encoding['attention_mask'].to(self.device)
         
-        with torch.no_grad():
+        with eager_attention(self.model), torch.no_grad():
             outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,

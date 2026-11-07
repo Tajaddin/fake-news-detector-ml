@@ -11,12 +11,49 @@ from sklearn.svm import LinearSVC
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, classification_report
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, cross_val_predict, StratifiedKFold
+from sklearn.base import clone
 import pickle
 import joblib
 from scipy import stats
 import warnings
 warnings.filterwarnings('ignore')
+
+
+def out_of_fold_proba(fit_predict, labels, n_splits=5, random_state=42):
+    """Score every row with a model that was trained without it.
+
+    fit_predict(train_idx, held_idx) must train a fresh model on the train_idx
+    rows and return its positive-class probabilities for held_idx, in that
+    order. Returns one score per row, in row order.
+    """
+    labels = np.asarray(labels)
+    scores = np.empty(len(labels))
+    folds = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    for train_idx, held_idx in folds.split(np.zeros(len(labels)), labels):
+        scores[held_idx] = fit_predict(train_idx, held_idx)
+    return scores
+
+
+def out_of_fold_text_proba(fit_score, texts, labels, n_splits=5, random_state=42):
+    """out_of_fold_proba for a model that reads raw text.
+
+    fit_score(train_texts, train_labels, held_texts) must train a fresh model
+    and return its positive-class probabilities for held_texts, in that order.
+    """
+    labels = np.asarray(labels)
+
+    def fit_predict(train_idx, held_idx):
+        return fit_score([texts[i] for i in train_idx], labels[train_idx],
+                         [texts[i] for i in held_idx])
+
+    return out_of_fold_proba(fit_predict, labels, n_splits, random_state)
+
+
+def _positive_score(model, X):
+    if hasattr(model, 'predict_proba'):
+        return model.predict_proba(X)[:, 1]
+    return model.predict(X)
 
 class FakeNewsEnsemble:
     """
@@ -48,42 +85,37 @@ class FakeNewsEnsemble:
         self.transformer_predictions = predictions
         self.transformer_probabilities = probabilities
     
-    def train_stacking_ensemble(self, X_train, y_train, X_val, y_val):
-        """Train a stacking ensemble with meta-learner"""
-        print("   -> Generating meta-features for stacking...")
-        
-        # Collect base model predictions
+    def train_stacking_ensemble(self, X_train, y_train, X_val, y_val,
+                                transformer_train_oof=None, transformer_val=None,
+                                n_splits=5, random_state=42):
+        """Train a stacking ensemble with meta-learner
+
+        The meta-learner is fit on out-of-fold scores: each training row is
+        scored by a copy of the base model that never saw it. In-sample scores
+        would make the models that memorise the training set look best.
+        transformer_train_oof must be built the same way (out_of_fold_proba),
+        and both transformer arrays must follow the row order of X_train / X_val.
+        """
+        print("   -> Generating out-of-fold meta-features for stacking...")
+
+        folds = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
         train_meta_features = []
         val_meta_features = []
-        
+
         for name, model_dict in self.base_models.items():
             model = model_dict['model']
-            
-            # Get predictions on training set
-            if hasattr(model, 'predict_proba'):
-                train_pred = model.predict_proba(X_train)[:, 1]
-                val_pred = model.predict_proba(X_val)[:, 1]
-            else:
-                train_pred = model.predict(X_train)
-                val_pred = model.predict(X_val)
-            
+            method = 'predict_proba' if hasattr(model, 'predict_proba') else 'predict'
+            train_pred = cross_val_predict(clone(model), X_train, y_train, cv=folds, method=method)
+            if train_pred.ndim == 2:
+                train_pred = train_pred[:, 1]
+
             train_meta_features.append(train_pred)
-            val_meta_features.append(val_pred)
-        
-        # Add transformer predictions if available
-        if self.transformer_probabilities is not None:
-            # IMPORTANT: For stacking training, transformer_probabilities must contain
-            # [Train_Probs, Val_Probs] concatenated in that order.
-            train_size = X_train.shape[0]  # FIXED: Use shape[0] instead of len()
-            
-            # Safety check
-            if len(self.transformer_probabilities) < train_size + X_val.shape[0]:
-                print(f"Warning: Transformer probs length ({len(self.transformer_probabilities)}) "
-                      f"is smaller than Train+Val size ({train_size + X_val.shape[0]}). Stacking might fail.")
-            
-            train_meta_features.append(self.transformer_probabilities[:train_size])
-            val_meta_features.append(self.transformer_probabilities[train_size:train_size+X_val.shape[0]])
-        
+            val_meta_features.append(_positive_score(model, X_val))
+
+        if transformer_train_oof is not None:
+            train_meta_features.append(np.asarray(transformer_train_oof))
+            val_meta_features.append(np.asarray(transformer_val))
+
         # Stack features
         X_meta_train = np.column_stack(train_meta_features)
         X_meta_val = np.column_stack(val_meta_features)
